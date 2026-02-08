@@ -1,6 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits } = require('discord.js');
-const { joinVoiceChannel } = require('@discordjs/voice');
+const { Client, GatewayIntentBits, ActivityType } = require('discord.js');
 const express = require('express');
 
 // -------------------------
@@ -18,8 +17,7 @@ const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.GuildVoiceStates
+        GatewayIntentBits.GuildMessages
     ]
 });
 
@@ -28,28 +26,21 @@ const TOKEN = process.env.TOKEN.trim();
 const GUILD_ID = process.env.GUILD_ID;
 const ROLE_ID = process.env.ROLE_ID;
 const WELCOME_CHANNEL_ID = process.env.WELCOME_CHANNEL_ID;
-const VOICE_CHANNEL_ID = process.env.VOICE_CHANNEL_ID;
 
 // Bot hazır olduğunda
 client.once('ready', async () => {
     console.log(`${client.user.tag} giriş yaptı!`);
 
-    // 7/24 ses kanalı
     try {
         const guild = await client.guilds.fetch(GUILD_ID);
-        const channel = await guild.channels.fetch(VOICE_CHANNEL_ID);
+        const totalMembers = guild.memberCount;
+        const onlineMembers = guild.members.cache.filter(m => m.presence?.status === 'online').size;
 
-        joinVoiceChannel({
-            channelId: channel.id,
-            guildId: guild.id,
-            adapterCreator: guild.voiceAdapterCreator,
-            selfDeaf: false,
-            selfMute: false
-        });
-
-        console.log("Ses kanalına bağlandı ve 7/24 kalacak.");
+        // Oynuyor bilgisini ayarla
+        client.user.setActivity(`Çevrimiçi: ${onlineMembers} | Toplam: ${totalMembers}`, { type: ActivityType.Watching });
+        console.log(`Oynuyor bilgisi ayarlandı: Çevrimiçi: ${onlineMembers} | Toplam: ${totalMembers}`);
     } catch (err) {
-        console.error("Ses kanalına bağlanırken hata:", err);
+        console.error("Oynuyor bilgisini ayarlarken hata:", err);
     }
 });
 
@@ -60,11 +51,18 @@ client.on('guildMemberAdd', async member => {
         const role = member.guild.roles.cache.get(ROLE_ID);
         if (role) await member.roles.add(role);
 
-        // Hoşgeldin mesajı (kalıcı)
+        // Hoşgeldin mesajı
         const channel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
         if (channel) {
             await channel.send(`Hoş geldin <@${member.id}>!`);
         }
+
+        // Oynuyor bilgisini güncelle
+        const guild = member.guild;
+        const totalMembers = guild.memberCount;
+        const onlineMembers = guild.members.cache.filter(m => m.presence?.status === 'online').size;
+        client.user.setActivity(`Çevrimiçi: ${onlineMembers} | Toplam: ${totalMembers}`, { type: ActivityType.Watching });
+
     } catch (err) {
         console.error(err);
     }
