@@ -1,72 +1,69 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, ActivityType, Events } = require('discord.js');
+const { Client, GatewayIntentBits, ActivityType, Events, Partials } = require('discord.js');
 const { joinVoiceChannel, VoiceConnectionStatus, entersState } = require('@discordjs/voice');
 const sodium = require('libsodium-wrappers');
 const express = require('express');
 
-// --- 1. UPTIME SERVİSİ (Railway için) ---
+// --- 1. PRO UPTIME SERVİSİ ---
 const app = express();
-app.get('/', (req, res) => res.send('Bot 7/24 Aktif ve Ses Kanalında!'));
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[UPTIME] Servis ${PORT} portunda hazır.`));
+app.get('/', (req, res) => res.status(200).send('SASP Altyapısı Aktif.'));
+app.listen(process.env.PORT || 3000);
 
-// --- 2. BOT YAPILANDIRMASI ---
+// --- 2. ÜST DÜZEY CLİENT ---
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildPresences // Online üye sayısı için şart
-    ]
+        GatewayIntentBits.GuildPresences
+    ],
+    partials: [Partials.GuildMember, Partials.User],
+    makeCache: (manager) => {
+        if (manager.name === 'MessageManager') return 0;
+        return 50;
+    }
 });
 
-// Değişkenleri Çekelim
 const cfg = {
     token: process.env.TOKEN?.trim(),
-    guildId: process.env.GUILD_ID,
-    voiceId: process.env.VOICE_CHANNEL_ID,
-    roleId: process.env.ROLE_ID,
-    welcomeId: process.env.WELCOME_CHANNEL_ID
+    guild: process.env.GUILD_ID,
+    voice: process.env.VOICE_CHANNEL_ID,
+    role: process.env.ROLE_ID,
+    welcome: process.env.WELCOME_CHANNEL_ID
 };
 
-// --- 3. AKTİVİTE GÜNCELLEME (Çevrim içi / Toplam Üye) ---
-async function updateStatus() {
+// --- 3. DİNAMİK DURUM DÖNGÜSÜ (15 Sn.) ---
+let statusCycle = 0;
+async function refreshPresence() {
     try {
-        const guild = await client.guilds.fetch(cfg.guildId);
-        const total = guild.memberCount;
-        // Presence intenti açıksa online olanları filtreler
-        const online = guild.members.cache.filter(m => 
-            m.presence && (m.presence.status === 'online' || m.presence.status === 'dnd' || m.presence.status === 'idle')
-        ).size;
+        const guild = client.guilds.cache.get(cfg.guild);
+        if (!guild) return;
 
-        client.user.setActivity(`Aktif: ${online} | Üye: ${total}`, { type: ActivityType.Watching });
-    } catch (e) {
-        console.log("[STATUS] Güncellenirken hata oluştu.");
-    }
+        const online = guild.members.cache.filter(m => m.presence && m.presence.status !== 'offline').size;
+        
+        const statuses = [
+            { name: "San Andreas State Police", type: ActivityType.Playing },
+            { name: `Aktif: ${online} | Üye: ${guild.memberCount}`, type: ActivityType.Watching }
+        ];
+
+        const current = statuses[statusCycle % statuses.length];
+        client.user.setPresence({ activities: [current], status: 'online' });
+        statusCycle++;
+    } catch (e) { console.log("Durum güncellenemedi."); }
 }
 
-// --- 4. SES BAĞLANTISI (Kritik Şifreleme Fixli) ---
-async function connectToVoice() {
+// --- 4. KESİNTİSİZ SES MOTORU ---
+async function maintainVoice() {
     try {
-        const guild = await client.guilds.fetch(cfg.guildId);
-        const channel = await guild.channels.fetch(cfg.voiceId);
-
-        if (!channel) return console.log("[SES] Kanal bulunamadı.");
+        const guild = await client.guilds.fetch(cfg.guild);
+        const voiceChannel = await guild.channels.fetch(cfg.voice);
 
         const connection = joinVoiceChannel({
-            channelId: channel.id,
+            channelId: voiceChannel.id,
             guildId: guild.id,
             adapterCreator: guild.voiceAdapterCreator,
-            selfDeaf: true, // Kulaklık Kapalı
+            selfDeaf: true,
             selfMute: false
-        });
-
-        // Şifreleme hatalarını yakala ve botu çökertmeden yeniden bağlan
-        connection.on('error', error => {
-            console.error("[SES MOTORU] Şifreleme Hatası Yakalandı:", error.message);
-            if (error.message.includes('encryption')) {
-                setTimeout(connectToVoice, 5000);
-            }
         });
 
         connection.on(VoiceConnectionStatus.Disconnected, async () => {
@@ -76,54 +73,60 @@ async function connectToVoice() {
                     entersState(connection, VoiceConnectionStatus.Connecting, 5000),
                 ]);
             } catch (e) {
-                console.log("[SES] Bağlantı koptu, yeniden deneniyor...");
-                setTimeout(connectToVoice, 5000);
+                connection.destroy();
+                setTimeout(maintainVoice, 5000);
             }
         });
 
-        console.log(`[SES] ${channel.name} kanalına bağlanıldı.`);
+        connection.on('error', () => {
+            connection.destroy();
+            setTimeout(maintainVoice, 5000);
+        });
+
     } catch (err) {
-        console.error("[SES] Hata oluştu:", err.message);
-        setTimeout(connectToVoice, 10000);
+        setTimeout(maintainVoice, 10000);
     }
 }
 
-// --- 5. ANA EVENTLER ---
-client.once(Events.ClientReady, async () => {
-    console.log(`[BOT] ${client.user.tag} başarıyla giriş yaptı.`);
-    
-    // Ses ve Aktivite Başlat
-    connectToVoice();
-    updateStatus();
-    setInterval(updateStatus, 60000); // 1 dakikada bir güncelle
-});
-
-// Otorol ve Karşılama
+// --- 5. GELİŞMİŞ OTOROL & ÖZEL HOŞGELDİN ---
 client.on(Events.GuildMemberAdd, async (member) => {
     try {
-        if (cfg.roleId) {
-            const role = member.guild.roles.cache.get(cfg.roleId);
-            if (role) await member.roles.add(role);
+        // 1) Otorol Sistemi
+        if (cfg.role) {
+            const role = member.guild.roles.cache.get(cfg.role);
+            if (role) {
+                // Rol verme işlemini dene, yetki hatası varsa yakala
+                await member.roles.add(role).catch(() => console.log(`[!] ${member.user.tag} için rol yetkisi yetersiz.`));
+            }
         }
-        if (cfg.welcomeId) {
-            const channel = member.guild.channels.cache.get(cfg.welcomeId);
-            if (channel) channel.send(`Sunucumuza hoş geldin 👋
-Başvuru ve bilgilendirme kanallarını incelemeyi unutma.
 
-San Andreas State Police #𝐃𝐄𝐒𝐓𝐀𝐍 <@${member.id}>!`);
+        // 2) Özel Hoşgeldin Mesajı
+        if (cfg.welcome) {
+            const channel = member.guild.channels.cache.get(cfg.welcome);
+            if (channel) {
+                channel.send({
+                    content: `Sunucumuza hoş geldin <@${member.id}>\nBaşvuru ve bilgilendirme kanallarını incelemeyi unutma.\n\nSan Andreas State Police #𝐃𝐄𝐒𝐓𝐀𝐍`
+                });
+            }
         }
-        updateStatus();
-    } catch (e) { console.log("[MEMBER] Yeni üye işlem hatası."); }
+        refreshPresence();
+    } catch (e) { console.log("Üye giriş işlemi başarısız."); }
 });
 
-// --- 6. SİSTEMİ ÇALIŞTIR ---
+// --- 6. SİSTEM BAŞLATICI ---
+client.once(Events.ClientReady, () => {
+    console.log(`[BAŞARILI] SASP Teşkilatı Botu Aktif: ${client.user.tag}`);
+    maintainVoice();
+    refreshPresence();
+    setInterval(refreshPresence, 15000);
+});
+
+// Çökmeyi önleyici global hata yakalayıcı
+process.on('unhandledRejection', (reason) => {
+    console.error('Yakalanmayan Hata:', reason);
+});
+
 (async () => {
-    try {
-        console.log("[SİSTEM] Şifreleme motoru yükleniyor...");
-        await sodium.ready; // Hatayı önleyen kritik satır
-        console.log("[SİSTEM] Motor hazır. Bot başlatılıyor...");
-        await client.login(cfg.token);
-    } catch (err) {
-        console.error("[KRİTİK HATA] Başlatma başarısız:", err);
-    }
+    await sodium.ready; 
+    client.login(cfg.token);
 })();
