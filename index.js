@@ -1,25 +1,29 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
+const { joinVoiceChannel } = require('@discordjs/voice');
 const express = require('express');
 
-// Express server (Uptime Robot için)
+// -------------------------
+// Express server (uptime için)
+// -------------------------
 const app = express();
 app.get('/', (req, res) => res.send('Bot aktif!'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server port ${PORT} üzerinde çalışıyor`));
 
+// -------------------------
 // Discord bot
+// -------------------------
 const client = new Client({
     intents: [
-        GatewayIntentBits.Guilds,           // Sunucu bilgileri için gerekli
-        GatewayIntentBits.GuildMembers,     // Otorol ve hoşgeldin mesajı için gerekli
-        GatewayIntentBits.GuildMessages,    // Kanal mesajları için gerekli
-        GatewayIntentBits.GuildVoiceStates  // Ses kanallarında botu aktif tutmak için gerekli
-        // MessageContent sadece içerik okumak için eklenebilir
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.GuildVoiceStates
     ]
 });
 
-// ID’leri env’den al
+// Environment variable’lar
 const TOKEN = process.env.TOKEN.trim();
 const GUILD_ID = process.env.GUILD_ID;
 const ROLE_ID = process.env.ROLE_ID;
@@ -27,16 +31,23 @@ const WELCOME_CHANNEL_ID = process.env.WELCOME_CHANNEL_ID;
 const VOICE_CHANNEL_ID = process.env.VOICE_CHANNEL_ID;
 
 // Bot hazır olduğunda
-client.on('ready', async () => {
+client.once('ready', async () => {
     console.log(`${client.user.tag} giriş yaptı!`);
 
-    // 7/24 seste kalma
+    // 7/24 ses kanalı
     try {
-        const guild = client.guilds.cache.get(GUILD_ID);
-        const channel = guild.channels.cache.get(VOICE_CHANNEL_ID);
-        if (channel) {
-            await channel.join().catch(console.error);
-        }
+        const guild = await client.guilds.fetch(GUILD_ID);
+        const channel = await guild.channels.fetch(VOICE_CHANNEL_ID);
+
+        joinVoiceChannel({
+            channelId: channel.id,
+            guildId: guild.id,
+            adapterCreator: guild.voiceAdapterCreator,
+            selfDeaf: false,
+            selfMute: false
+        });
+
+        console.log("Ses kanalına bağlandı ve 7/24 kalacak.");
     } catch (err) {
         console.error("Ses kanalına bağlanırken hata:", err);
     }
@@ -49,11 +60,10 @@ client.on('guildMemberAdd', async member => {
         const role = member.guild.roles.cache.get(ROLE_ID);
         if (role) await member.roles.add(role);
 
-        // Hoşgeldin mesajı
+        // Hoşgeldin mesajı (kalıcı)
         const channel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
         if (channel) {
-            const msg = await channel.send(`Hoş geldin <@${member.id}>!`);
-            setTimeout(() => msg.delete().catch(console.error), 3000);
+            await channel.send(`Hoş geldin <@${member.id}>!`);
         }
     } catch (err) {
         console.error(err);
