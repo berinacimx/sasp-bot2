@@ -30,9 +30,27 @@ const ROLE_ID = process.env.ROLE_ID;
 const WELCOME_CHANNEL_ID = process.env.WELCOME_CHANNEL_ID;
 const VOICE_CHANNEL_ID = process.env.VOICE_CHANNEL_ID;
 
+// -------------------------
+// Fonksiyon: Online/Toplam Üye güncelleme
+// -------------------------
+async function updateActivity() {
+    try {
+        const guild = await client.guilds.fetch(GUILD_ID);
+        const totalMembers = guild.memberCount;
+        const onlineMembers = guild.members.cache.filter(m => m.presence?.status === 'online').size;
+
+        client.user.setActivity(`Çevrim içi: ${onlineMembers} | Üye: ${totalMembers}`, { type: ActivityType.Watching });
+    } catch (err) {
+        console.error("Oynuyor bilgisini güncellerken hata:", err);
+    }
+}
+
 // Bot hazır olduğunda
 client.once('ready', async () => {
     console.log(`${client.user.tag} giriş yaptı!`);
+
+    // İlk oynuyor durumu
+    client.user.setActivity("San Andreas State Police", { type: ActivityType.Playing });
 
     try {
         // -------------------------
@@ -45,28 +63,20 @@ client.once('ready', async () => {
             channelId: channel.id,
             guildId: guild.id,
             adapterCreator: guild.voiceAdapterCreator,
-            selfDeaf: false, // bot kendini susturmaz
-            selfMute: false  // bot kendi mikrofonunu kapatmaz
+            selfDeaf: false,
+            selfMute: false
         });
         console.log("Ses kanalına bağlandı ve 7/24 kalacak.");
 
-        // -------------------------
-        // Online ve Toplam Üye Oynuyor Bilgisi
-        // -------------------------
-        const updateActivity = () => {
-            const totalMembers = guild.memberCount;
-            const onlineMembers = guild.members.cache.filter(m => m.presence?.status === 'online').size;
-            client.user.setActivity(`Çevrimiçi: ${onlineMembers} | Toplam: ${totalMembers}`, { type: ActivityType.Watching });
-        };
-
-        // İlk ayarlama
-        updateActivity();
-
-        // Her 1 dakikada güncelle
-        setInterval(updateActivity, 60000);
+        // İlk 15 saniye sonra oynuyor bilgisini güncelle
+        setTimeout(() => {
+            updateActivity();
+            // Her 1 dakikada tekrar güncelle
+            setInterval(updateActivity, 60000);
+        }, 15000);
 
     } catch (err) {
-        console.error("Hata:", err);
+        console.error("Ses kanalına bağlanırken hata:", err);
     }
 });
 
@@ -82,17 +92,11 @@ client.on('guildMemberAdd', async member => {
         // Hoşgeldin mesajı
         const channel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
         if (channel) {
-            await channel.send(`Sunucumuza hoş geldin 👋
-Başvuru ve bilgilendirme kanallarını incelemeyi unutma.
-
-San Andreas State Police #𝐃𝐄𝐒𝐓𝐀𝐍 <@${member.id}>!`);
+            await channel.send(`Hoş geldin <@${member.id}>!`);
         }
 
         // Oynuyor bilgisini güncelle
-        const guild = member.guild;
-        const totalMembers = guild.memberCount;
-        const onlineMembers = guild.members.cache.filter(m => m.presence?.status === 'online').size;
-        client.user.setActivity(`Çevrimiçi: ${onlineMembers} | Toplam: ${totalMembers}`, { type: ActivityType.Watching });
+        updateActivity();
 
     } catch (err) {
         console.error(err);
@@ -103,4 +107,3 @@ San Andreas State Police #𝐃𝐄𝐒𝐓𝐀𝐍 <@${member.id}>!`);
 // Bot login
 // -------------------------
 client.login(TOKEN).catch(err => console.error("Giriş başarısız:", err));
-
