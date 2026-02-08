@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, ActivityType } = require('discord.js');
+const { Client, GatewayIntentBits, ActivityType, Events } = require('discord.js');
 const { joinVoiceChannel } = require('@discordjs/voice');
 const express = require('express');
 
@@ -7,23 +7,29 @@ const express = require('express');
 // Express server (uptime için)
 // -------------------------
 const app = express();
-app.get('/', (req, res) => res.send('Bot aktif!'));
+app.get('/', (req, res) => res.send('Bot aktif ve ses sistemleri çalışıyor!'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server port ${PORT} üzerinde çalışıyor`));
 
 // -------------------------
-// Discord bot
+// Discord Bot Ayarları
 // -------------------------
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.GuildVoiceStates
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.GuildPresences
     ]
 });
 
-// Environment variable’lar
+// Environment variable kontrolü
+if (!process.env.TOKEN) {
+    console.error("HATA: .env dosyasında TOKEN bulunamadı!");
+    process.exit(1);
+}
+
 const TOKEN = process.env.TOKEN.trim();
 const GUILD_ID = process.env.GUILD_ID;
 const ROLE_ID = process.env.ROLE_ID;
@@ -35,79 +41,81 @@ const VOICE_CHANNEL_ID = process.env.VOICE_CHANNEL_ID;
 // -------------------------
 async function updateActivity() {
     try {
+        if (!GUILD_ID) return;
         const guild = await client.guilds.fetch(GUILD_ID);
+        
         const totalMembers = guild.memberCount;
-        const onlineMembers = guild.members.cache.filter(m => m.presence?.status === 'online').size;
+        const onlineMembers = guild.members.cache.filter(m => 
+            m.presence && (m.presence.status === 'online' || m.presence.status === 'dnd' || m.presence.status === 'idle')
+        ).size;
 
         client.user.setActivity(`Çevrim içi: ${onlineMembers} | Üye: ${totalMembers}`, { type: ActivityType.Watching });
     } catch (err) {
-        console.error("Oynuyor bilgisini güncellerken hata:", err);
+        console.error("Durum güncellenirken hata:", err);
     }
 }
 
-// Bot hazır olduğunda
-client.once('ready', async () => {
-    console.log(`${client.user.tag} giriş yaptı!`);
+// -------------------------
+// Bot Hazır Olduğunda (ClientReady)
+// -------------------------
+client.once(Events.ClientReady, async () => {
+    console.log(`${client.user.tag} başarıyla giriş yaptı!`);
 
-    // İlk oynuyor durumu
     client.user.setActivity("San Andreas State Police", { type: ActivityType.Playing });
 
     try {
         // -------------------------
         // 7/24 Ses Kanalına Bağlan
         // -------------------------
-        const guild = await client.guilds.fetch(GUILD_ID);
-        const channel = await guild.channels.fetch(VOICE_CHANNEL_ID);
+        if (GUILD_ID && VOICE_CHANNEL_ID) {
+            const guild = await client.guilds.fetch(GUILD_ID);
+            const channel = await guild.channels.fetch(VOICE_CHANNEL_ID);
 
-        joinVoiceChannel({
-            channelId: channel.id,
-            guildId: guild.id,
-            adapterCreator: guild.voiceAdapterCreator,
-            selfDeaf: false,
-            selfMute: false
-        });
-        console.log("Ses kanalına bağlandı ve 7/24 kalacak.");
+            if (channel) {
+                joinVoiceChannel({
+                    channelId: channel.id,
+                    guildId: guild.id,
+                    adapterCreator: guild.voiceAdapterCreator,
+                    selfDeaf: true,  // <-- DEĞİŞİKLİK BURADA: Kulaklık kapalı (sağırlaştırılmış)
+                    selfMute: false  // Mikrofon açık (konuşabilir)
+                });
+                console.log(`🔊 ${channel.name} kanalına bağlanıldı (Kulaklık Kapalı).`);
+            } else {
+                console.log("Ses kanalı bulunamadı.");
+            }
+        }
 
-        // İlk 15 saniye sonra oynuyor bilgisini güncelle
+        // Aktivite güncelleme döngüsü
         setTimeout(() => {
             updateActivity();
-            // Her 1 dakikada tekrar güncelle
             setInterval(updateActivity, 60000);
-        }, 15000);
+        }, 5000);
 
     } catch (err) {
-        console.error("Ses kanalına bağlanırken hata:", err);
+        console.error("Başlangıç işlemlerinde hata:", err);
     }
 });
 
 // -------------------------
 // Otorol + Hoşgeldin Mesajı
 // -------------------------
-client.on('guildMemberAdd', async member => {
+client.on(Events.GuildMemberAdd, async member => {
     try {
-        // Otorol
-        const role = member.guild.roles.cache.get(ROLE_ID);
-        if (role) await member.roles.add(role);
-
-        // Hoşgeldin mesajı
-        const channel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
-        if (channel) {
-            await channel.send(`Sunucumuza hoş geldin 👋
-Başvuru ve bilgilendirme kanallarını incelemeyi unutma.
-
-San Andreas State Police #𝐃𝐄𝐒𝐓𝐀𝐍 <@${member.id}>!`);
+        if (ROLE_ID) {
+            const role = member.guild.roles.cache.get(ROLE_ID);
+            if (role) await member.roles.add(role);
         }
 
-        // Oynuyor bilgisini güncelle
+        if (WELCOME_CHANNEL_ID) {
+            const channel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
+            if (channel) await channel.send(`Hoş geldin <@${member.id}>!`);
+        }
         updateActivity();
-
     } catch (err) {
-        console.error(err);
+        console.error("Üye girişinde hata:", err);
     }
 });
 
-// -------------------------
-// Bot login
-// -------------------------
-client.login(TOKEN).catch(err => console.error("Giriş başarısız:", err));
+client.on(Events.GuildMemberRemove, () => updateActivity());
 
+client.login(TOKEN).catch(err => console.error("Giriş başarısız:", err));
