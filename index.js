@@ -5,7 +5,7 @@ const sodium = require('libsodium-wrappers');
 const express = require('express');
 
 const app = express();
-app.get('/', (req, res) => res.send('SASP 7/24 Kesintisiz Sistem!'));
+app.get('/', (req, res) => res.send('SASP Sistemi Aktif!'));
 app.listen(process.env.PORT || 3000);
 
 const client = new Client({
@@ -25,17 +25,15 @@ const cfg = {
     welcome: process.env.WELCOME_CHANNEL_ID
 };
 
-// --- GÜÇLENDİRİLMİŞ SES MOTORU ---
+// --- SES BAĞLANTISI (ZORLAMALI MOD) ---
 async function maintainVoice() {
     try {
         const guild = client.guilds.cache.get(cfg.guild);
         if (!guild) return;
 
-        // Eski kalıntıları temizle
         const oldConn = getVoiceConnection(cfg.guild);
         if (oldConn) oldConn.destroy();
 
-        // Şifreleme modlarını Discord'un yeni GCM protokolüne göre zorluyoruz
         const connection = joinVoiceChannel({
             channelId: cfg.voice,
             guildId: cfg.guild,
@@ -44,26 +42,28 @@ async function maintainVoice() {
             selfMute: false
         });
 
-        // Hata yönetimi (Döngü kırıcı)
-        connection.on('error', (err) => {
-            console.error("⚠️ [KRİTİK] Ses şifreleme hatası. 20 saniye sonra farklı bölge denenecek.");
-            if (connection) connection.destroy();
-            setTimeout(maintainVoice, 20000);
+        connection.on(VoiceConnectionStatus.Ready, () => {
+            console.log(`✅ [BAŞARILI] Ses kanalına kilitlendi!`);
         });
 
-        connection.on(VoiceConnectionStatus.Ready, () => {
-            console.log(`✅ [BAŞARILI] SASP Ses Hattı Aktif!`);
+        connection.on('error', (err) => {
+            console.error("⚠️ [SİSTEM] Şifreleme hatası yakalandı, tazeleniyor...");
+            if (connection) connection.destroy();
+            setTimeout(maintainVoice, 15000);
         });
 
     } catch (e) {
-        setTimeout(maintainVoice, 30000);
+        setTimeout(maintainVoice, 20000);
     }
 }
 
-// OTOROL & HOŞGELDİN (İstediğin format)
+// OTOROL & HOŞGELDİN
 client.on(Events.GuildMemberAdd, async (member) => {
     try {
-        if (cfg.role) await member.roles.add(cfg.role).catch(() => {});
+        if (cfg.role) {
+            const role = member.guild.roles.cache.get(cfg.role);
+            if (role) await member.roles.add(role).catch(() => {});
+        }
         if (cfg.welcome) {
             const channel = member.guild.channels.cache.get(cfg.welcome);
             if (channel) channel.send(`Sunucumuza hoş geldin <@${member.id}>\nBaşvuru ve bilgilendirme kanallarını incelemeyi unutma.\n\nSan Andreas State Police #𝐃𝐄𝐒𝐓𝐀𝐍`);
@@ -71,7 +71,7 @@ client.on(Events.GuildMemberAdd, async (member) => {
     } catch (e) {}
 });
 
-// OYNUYOR/İZLİYOR DÖNGÜSÜ
+// AKTİVİTE DÖNGÜSÜ
 let cycle = 0;
 function refreshStatus() {
     const guild = client.guilds.cache.get(cfg.guild);
@@ -88,13 +88,12 @@ function refreshStatus() {
 }
 
 client.once(Events.ClientReady, () => {
-    console.log(`🚨 [SASP] ${client.user.tag} operasyon bölgesinde.`);
+    console.log(`[BOT] ${client.user.tag} giriş yaptı.`);
     maintainVoice();
     setInterval(refreshStatus, 20000);
 });
 
 (async () => {
-    // Kütüphane tam yüklenmeden login olmayı engelle (Hata çözücü)
-    await sodium.ready;
+    await sodium.ready; // Şifreleme motorunu bekle
     client.login(cfg.token);
 })();
