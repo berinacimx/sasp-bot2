@@ -92,7 +92,10 @@ client.on('guildMemberAdd', async member => {
         // Hoşgeldin mesajı
         const channel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
         if (channel) {
-            await channel.send(`Hoş geldin <@${member.id}>!`);
+            await channel.send(`Sunucumuza hoş geldin 👋
+Başvuru ve bilgilendirme kanallarını incelemeyi unutma.
+
+San Andreas State Police #𝐃𝐄𝐒𝐓𝐀𝐍 <@${member.id}>!`);
         }
 
         // Oynuyor bilgisini güncelle
@@ -107,3 +110,4 @@ client.on('guildMemberAdd', async member => {
 // Bot login
 // -------------------------
 client.login(TOKEN).catch(err => console.error("Giriş başarısız:", err));
+
