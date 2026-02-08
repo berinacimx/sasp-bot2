@@ -1,18 +1,12 @@
 {
-  "name": "sasp-destan-v2026",
+  "name": "sasp-v5-final",
   "version": "1.0.0",
   "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
   "dependencies": {
     "discord.js": "^14.16.3",
     "@discordjs/voice": "0.17.0",
     "libsodium-wrappers": "0.7.15",
     "express": "^4.21.0",
     "dotenv": "^16.4.5"
-  },
-  "engines": {
-    "node": "22.x"
   }
 }
