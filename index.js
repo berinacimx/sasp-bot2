@@ -1,15 +1,15 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, ActivityType, Events, Partials, Options } = require('discord.js');
-const { joinVoiceChannel, VoiceConnectionStatus, getVoiceConnection } = require('@discordjs/voice');
+const { Client, GatewayIntentBits, ActivityType, Events, Partials } = require('discord.js');
+const { joinVoiceChannel, VoiceConnectionStatus, entersState, getVoiceConnection, generateDependencyReport } = require('@discordjs/voice');
 const sodium = require('libsodium-wrappers');
 const express = require('express');
 
-// --- 1. UPTIME SERVİSİ ---
+// 1. UPTIME & LOGS (Gereksinim Raporu)
 const app = express();
-app.get('/', (req, res) => res.send('SASP Sistemi Aktif!'));
+app.get('/', (req, res) => res.send('SASP Altyapı Aktif! 🚨'));
 app.listen(process.env.PORT || 3000);
+console.log(generateDependencyReport()); // Hata ayıklama için kritik
 
-// --- 2. GÜVENLİ CLİENT ---
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -17,8 +17,7 @@ const client = new Client({
         GatewayIntentBits.GuildVoiceStates,
         GatewayIntentBits.GuildPresences
     ],
-    partials: [Partials.GuildMember, Partials.User],
-    makeCache: Options.cacheWithLimits({ MessageManager: 0 })
+    partials: [Partials.GuildMember, Partials.User]
 });
 
 const cfg = {
@@ -29,80 +28,101 @@ const cfg = {
     welcome: process.env.WELCOME_CHANNEL_ID
 };
 
-// --- 3. EN DÜZGÜN AKTİVİTE DÖNGÜSÜ ---
-let statusIndex = 0;
-async function rotatePresence() {
-    try {
-        const guild = client.guilds.cache.get(cfg.guild);
-        if (!guild) return;
-
-        const online = guild.members.cache.filter(m => m.presence && m.presence.status !== 'offline').size;
-
-        const list = [
-            { name: "San Andreas State Police", type: ActivityType.Playing },
-            { name: `Aktif: ${online} | Üye: ${guild.memberCount}`, type: ActivityType.Watching }
-        ];
-
-        const current = list[statusIndex % list.length];
-        client.user.setActivity(current.name, { type: current.type });
-        statusIndex++;
-    } catch (e) { console.log("Aktivite hatası."); }
-}
-
-// --- 4. ZIRHLI SES BAĞLANTISI ---
-async function stayInVoice() {
+// 2. GELİŞMİŞ SES BAĞLANTISI (ŞİFRELEME ZORLAMALI)
+async function maintainVoice() {
     try {
         const guild = await client.guilds.fetch(cfg.guild).catch(() => null);
         if (!guild) return;
 
-        const oldConn = getVoiceConnection(cfg.guild);
-        if (oldConn) oldConn.destroy();
+        // Varsa eski bağlantıyı tamamen söküp at
+        const oldConnection = getVoiceConnection(cfg.guild);
+        if (oldConnection) oldConnection.destroy();
 
         const connection = joinVoiceChannel({
             channelId: cfg.voice,
             guildId: cfg.guild,
             adapterCreator: guild.voiceAdapterCreator,
             selfDeaf: true,
-            selfMute: false
+            selfMute: false,
+            debug: false // Çok fazla log birikmesini önler
         });
 
-        connection.on('error', () => {
-            console.log("[SES] Motor hatası, 15sn sonra yeniden denenecek.");
-            setTimeout(stayInVoice, 15000);
+        // Bağlantı durumlarını izle
+        connection.on(VoiceConnectionStatus.Disconnected, async () => {
+            try {
+                await Promise.race([
+                    entersState(connection, VoiceConnectionStatus.Signalling, 5000),
+                    entersState(connection, VoiceConnectionStatus.Connecting, 5000),
+                ]);
+            } catch (e) {
+                if (connection.state.status !== VoiceConnectionStatus.Destroyed) connection.destroy();
+                setTimeout(maintainVoice, 10000);
+            }
         });
 
-        connection.on(VoiceConnectionStatus.Disconnected, () => {
-            setTimeout(stayInVoice, 5000);
+        connection.on('error', (err) => {
+            console.error("[SES HATASI] Motor Yenileniyor:", err.message);
+            if (connection.state.status !== VoiceConnectionStatus.Destroyed) connection.destroy();
+            setTimeout(maintainVoice, 15000); // 15 saniye soğuma
         });
 
-    } catch (e) { setTimeout(stayInVoice, 10000); }
+        connection.on(VoiceConnectionStatus.Ready, () => {
+            console.log(`[SES] ${cfg.voice} kanalına başarıyla kilitlendi. ✅`);
+        });
+
+    } catch (err) {
+        setTimeout(maintainVoice, 20000);
+    }
 }
 
-// --- 5. OTOROL & ÖZEL HOŞGELDİN ---
+// 3. AKTİVİTE DÖNGÜSÜ (DÜZGÜN FORMAT)
+let cycle = 0;
+async function refreshActivity() {
+    try {
+        const guild = client.guilds.cache.get(cfg.guild);
+        if (!guild) return;
+
+        const online = guild.members.cache.filter(m => m.presence && m.presence.status !== 'offline').size;
+
+        if (cycle === 0) {
+            client.user.setActivity("San Andreas State Police", { type: ActivityType.Playing });
+            cycle = 1;
+        } else {
+            client.user.setActivity(`Aktif: ${online} | Üye: ${guild.memberCount}`, { type: ActivityType.Watching });
+            cycle = 0;
+        }
+    } catch (e) { console.log("Aktivite güncellenemedi."); }
+}
+
+// 4. OTOROL & ÖZEL HOŞGELDİN
 client.on(Events.GuildMemberAdd, async (member) => {
     try {
-        if (cfg.role) await member.roles.add(cfg.role).catch(() => {});
-        
+        // Otorol
+        if (cfg.role) {
+            const role = member.guild.roles.cache.get(cfg.role);
+            if (role) await member.roles.add(role).catch(() => {});
+        }
+        // Hoşgeldin Mesajı (Senin istediğin format)
         if (cfg.welcome) {
             const channel = member.guild.channels.cache.get(cfg.welcome);
             if (channel) {
                 channel.send(`Sunucumuza hoş geldin <@${member.id}>\nBaşvuru ve bilgilendirme kanallarını incelemeyi unutma.\n\nSan Andreas State Police #𝐃𝐄𝐒𝐓𝐀𝐍`);
             }
         }
-        rotatePresence();
+        refreshActivity();
     } catch (e) {}
 });
 
-// --- 6. SİSTEM BAŞLATICI ---
+// 5. BAŞLATICI
 client.once(Events.ClientReady, () => {
-    console.log(`[OK] SASP Botu Aktif: ${client.user.tag}`);
-    stayInVoice();
-    rotatePresence();
-    setInterval(rotatePresence, 15000); // 15 saniyede bir değişir
+    console.log(`[SİSTEM] ${client.user.tag} operasyona hazır!`);
+    maintainVoice();
+    refreshActivity();
+    setInterval(refreshActivity, 15000);
 });
 
 (async () => {
     await sodium.ready; 
-    console.log("[SİSTEM] Şifreleme modülleri yüklendi.");
-    client.login(cfg.token).catch(() => console.log("Token hatalı!"));
+    console.log("[ŞİFRELEME] Libsodium hazırlandı.");
+    client.login(cfg.token).catch(e => console.error("[TOKEN] Hatalı!"));
 })();
