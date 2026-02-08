@@ -1,5 +1,6 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, ActivityType } = require('discord.js');
+const { joinVoiceChannel } = require('@discordjs/voice');
 const express = require('express');
 
 // -------------------------
@@ -17,7 +18,8 @@ const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildMessages
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.GuildVoiceStates
     ]
 });
 
@@ -26,25 +28,51 @@ const TOKEN = process.env.TOKEN.trim();
 const GUILD_ID = process.env.GUILD_ID;
 const ROLE_ID = process.env.ROLE_ID;
 const WELCOME_CHANNEL_ID = process.env.WELCOME_CHANNEL_ID;
+const VOICE_CHANNEL_ID = process.env.VOICE_CHANNEL_ID;
 
 // Bot hazır olduğunda
 client.once('ready', async () => {
     console.log(`${client.user.tag} giriş yaptı!`);
 
     try {
+        // -------------------------
+        // 7/24 Ses Kanalına Bağlan
+        // -------------------------
         const guild = await client.guilds.fetch(GUILD_ID);
-        const totalMembers = guild.memberCount;
-        const onlineMembers = guild.members.cache.filter(m => m.presence?.status === 'online').size;
+        const channel = await guild.channels.fetch(VOICE_CHANNEL_ID);
 
-        // Oynuyor bilgisini ayarla
-        client.user.setActivity(`Çevrimiçi: ${onlineMembers} | Toplam: ${totalMembers}`, { type: ActivityType.Watching });
-        console.log(`Oynuyor bilgisi ayarlandı: Çevrimiçi: ${onlineMembers} | Toplam: ${totalMembers}`);
+        joinVoiceChannel({
+            channelId: channel.id,
+            guildId: guild.id,
+            adapterCreator: guild.voiceAdapterCreator,
+            selfDeaf: false, // bot kendini susturmaz
+            selfMute: false  // bot kendi mikrofonunu kapatmaz
+        });
+        console.log("Ses kanalına bağlandı ve 7/24 kalacak.");
+
+        // -------------------------
+        // Online ve Toplam Üye Oynuyor Bilgisi
+        // -------------------------
+        const updateActivity = () => {
+            const totalMembers = guild.memberCount;
+            const onlineMembers = guild.members.cache.filter(m => m.presence?.status === 'online').size;
+            client.user.setActivity(`Çevrimiçi: ${onlineMembers} | Toplam: ${totalMembers}`, { type: ActivityType.Watching });
+        };
+
+        // İlk ayarlama
+        updateActivity();
+
+        // Her 1 dakikada güncelle
+        setInterval(updateActivity, 60000);
+
     } catch (err) {
-        console.error("Oynuyor bilgisini ayarlarken hata:", err);
+        console.error("Hata:", err);
     }
 });
 
-// Otorol + Hoşgeldin mesajı
+// -------------------------
+// Otorol + Hoşgeldin Mesajı
+// -------------------------
 client.on('guildMemberAdd', async member => {
     try {
         // Otorol
@@ -68,5 +96,7 @@ client.on('guildMemberAdd', async member => {
     }
 });
 
+// -------------------------
 // Bot login
+// -------------------------
 client.login(TOKEN).catch(err => console.error("Giriş başarısız:", err));
