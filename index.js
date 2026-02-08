@@ -5,30 +5,16 @@ const sodium = require('libsodium-wrappers');
 const express = require('express');
 
 /**
- * 1. ŞİFRELEME MOTORU (EN ÖNEMLİ KISIM)
- * Botun ses motorunu başlatmadan önce şifreleme kütüphanesini hazırlıyoruz.
- */
-async function startBot() {
-    await sodium.ready;
-    console.log("✅ [SİSTEM] Libsodium başarıyla hazırlandı.");
-    
-    // Botu şimdi başlatıyoruz
-    client.login(process.env.TOKEN?.trim()).catch(err => {
-        console.error("❌ [LOGIN] Giriş başarısız! Tokeni kontrol et.");
-    });
-}
-
-/**
- * 2. UPTIME & EXPRESS
- * Railway'in 'Health Check' sistemine yanıt verir, kapanmayı engeller.
+ * --- 1. UPTIME & EXPRESS ---
+ * Railway botun aktif olduğunu bu port sayesinde anlar.
  */
 const app = express();
-app.get('/', (req, res) => res.status(200).send('Bot 7/24 Aktif!'));
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 [SERVER] Port ${PORT} aktif.`));
+app.get('/', (req, res) => res.send('Bot 7/24 Aktif!'));
+app.listen(PORT, () => console.log(`[OK] Uptime servisi ${PORT} portunda çalışıyor.`));
 
 /**
- * 3. BOT YAPILANDIRMASI
+ * --- 2. BOT YAPILANDIRMASI ---
  */
 const client = new Client({
     intents: [
@@ -39,38 +25,41 @@ const client = new Client({
     ]
 });
 
-// Değişkenleri kısaltalım
-const cfg = {
-    guild: process.env.GUILD_ID,
-    role: process.env.ROLE_ID,
-    welcome: process.env.WELCOME_CHANNEL_ID,
-    voice: process.env.VOICE_CHANNEL_ID
+// Değişkenleri kolaylaştıralım
+const config = {
+    token: process.env.TOKEN?.trim(),
+    guildId: process.env.GUILD_ID,
+    roleId: process.env.ROLE_ID,
+    welcomeId: process.env.WELCOME_CHANNEL_ID,
+    voiceId: process.env.VOICE_CHANNEL_ID
 };
 
 /**
- * 4. AKTİVİTE GÜNCELLEME
+ * --- 3. AKTİVİTE GÜNCELLEME (Çevrim içi/Toplam) ---
  */
-async function refreshPresence() {
+async function updateActivity() {
     try {
-        const guild = await client.guilds.fetch(cfg.guild);
+        const guild = await client.guilds.fetch(config.guildId);
         const total = guild.memberCount;
-        const online = guild.members.cache.filter(m => m.presence?.status && m.presence.status !== 'offline').size;
-        
+        const online = guild.members.cache.filter(m => 
+            m.presence && ['online', 'dnd', 'idle'].includes(m.presence.status)
+        ).size;
+
         client.user.setActivity(`Aktif: ${online} | Üye: ${total}`, { type: ActivityType.Watching });
     } catch (e) {
-        console.log("⚠️ Durum güncellenirken hata oluştu (Muhtemelen Intentler kapalı).");
+        console.log("[!] Aktivite şu an güncellenemedi.");
     }
 }
 
 /**
- * 5. SES BAĞLANTISI (RECONNECT DESTEKLİ)
+ * --- 4. SES BAĞLANTISI (7/24) ---
  */
-async function connectVoice() {
+async function connectToVoice() {
     try {
-        const guild = await client.guilds.fetch(cfg.guild);
-        const channel = await guild.channels.fetch(cfg.voice);
+        const guild = await client.guilds.fetch(config.guildId);
+        const channel = await guild.channels.fetch(config.voiceId);
 
-        if (!channel) return console.error("❌ [SES] Kanal bulunamadı!");
+        if (!channel) return console.log("[-] Ses kanalı bulunamadı!");
 
         const connection = joinVoiceChannel({
             channelId: channel.id,
@@ -80,53 +69,72 @@ async function connectVoice() {
             selfMute: false
         });
 
+        // Bağlantı koparsa otomatik tekrar bağlan
         connection.on(VoiceConnectionStatus.Disconnected, async () => {
             try {
-                // Eğer manuel çıkılmadıysa 5 sn içinde geri dönmeyi dene
                 await Promise.race([
                     entersState(connection, VoiceConnectionStatus.Signalling, 5000),
                     entersState(connection, VoiceConnectionStatus.Connecting, 5000),
                 ]);
             } catch (e) {
-                console.log("🔄 [SES] Bağlantı koptu, yeniden bağlanılıyor...");
-                setTimeout(connectVoice, 5000);
+                console.log("[!] Bağlantı koptu, yeniden deneniyor...");
+                setTimeout(connectToVoice, 5000);
             }
         });
 
-        console.log(`🔊 [SES] ${channel.name} kanalına girildi.`);
+        console.log(`[+] ${channel.name} ses kanalına girildi.`);
     } catch (err) {
-        console.error("❌ [SES HATA]", err.message);
+        console.error("[!] Ses hatası:", err.message);
     }
 }
 
 /**
- * 6. EVENTLER
+ * --- 5. EVENTLER ---
  */
 client.once(Events.ClientReady, () => {
-    console.log(`🤖 [BOT] ${client.user.tag} aktif!`);
-    connectVoice();
-    refreshPresence();
-    setInterval(refreshPresence, 60000); // 1 dk bir güncelle
+    console.log(`[OK] ${client.user.tag} hazır!`);
+    
+    // Bot açılır açılmaz yapılacaklar
+    connectToVoice();
+    updateActivity();
+    
+    // Her 1 dakikada bir sayıları güncelle
+    setInterval(updateActivity, 60000);
 });
 
 client.on(Events.GuildMemberAdd, async (member) => {
     try {
-        if (cfg.role) {
-            const role = member.guild.roles.cache.get(cfg.role);
+        // Otorol
+        if (config.roleId) {
+            const role = member.guild.roles.cache.get(config.roleId);
             if (role) await member.roles.add(role);
         }
-        
-        const channel = member.guild.channels.cache.get(cfg.welcome);
-        if (channel) channel.send(`Sunucumuza hoş geldin 👋
+
+        // Hoşgeldin
+        if (config.welcomeId) {
+            const channel = member.guild.channels.cache.get(config.welcomeId);
+            if (channel) channel.send(`Sunucumuza hoş geldin 👋
 Başvuru ve bilgilendirme kanallarını incelemeyi unutma.
 
 San Andreas State Police #𝐃𝐄𝐒𝐓𝐀𝐍 <@${member.id}>!`);
+        }
         
-        refreshPresence();
+        updateActivity();
     } catch (e) {
-        console.log("⚠️ Karşılama hatası.");
+        console.log("[!] Yeni üye işleminde hata oluştu.");
     }
 });
 
-// Botu çalıştır
-startBot();
+/**
+ * --- 6. SİSTEMİ ÇALIŞTIR (Kritik Bölge) ---
+ * Hata almamak için önce şifrelemeyi bekletip sonra login yapıyoruz.
+ */
+(async () => {
+    console.log("[...] Şifreleme motoru yükleniyor...");
+    await sodium.ready; 
+    console.log("[OK] Şifreleme hazır. Bot giriş yapıyor...");
+    
+    client.login(config.token).catch(err => {
+        console.error("[!] Giriş başarısız! TOKEN veya INTENT ayarlarını kontrol et.");
+    });
+})();
