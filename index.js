@@ -63,7 +63,7 @@ client.on(Events.GuildMemberAdd, async (member) => {
         if (cfg.role) await member.roles.add(cfg.role).catch(() => {});
         if (cfg.welcome) {
             const channel = member.guild.channels.cache.get(cfg.welcome);
-            if (channel) channel.send(`Sunucumuza hoş geldin <@${member.id}>\nBaşvuru ve bilgilendirme kanallarını incelemeyi unutma.\n\nSan Andreas State Police #𝐃𝐄𝐒𝐓𝐀𝐍`);
+            if (channel) channel.send(`Sunucumuza hoş geldin <@${member.id}>\nBaşvuru ve bilgilendirme kanallarını incelemeyi unutma.\n\nSan Andreas State Police #Destan`);
         }
     } catch (e) {}
 });
