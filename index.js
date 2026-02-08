@@ -2,7 +2,7 @@ require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
 const express = require('express');
 
-// Express server (uptime robot için)
+// Express server (Uptime Robot için)
 const app = express();
 app.get('/', (req, res) => res.send('Bot aktif!'));
 const PORT = process.env.PORT || 3000;
@@ -11,11 +11,11 @@ app.listen(PORT, () => console.log(`Server port ${PORT} üzerinde çalışıyor`
 // Discord bot
 const client = new Client({
     intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildVoiceStates
+        GatewayIntentBits.Guilds,           // Sunucu bilgileri için gerekli
+        GatewayIntentBits.GuildMembers,     // Otorol ve hoşgeldin mesajı için gerekli
+        GatewayIntentBits.GuildMessages,    // Kanal mesajları için gerekli
+        GatewayIntentBits.GuildVoiceStates  // Ses kanallarında botu aktif tutmak için gerekli
+        // MessageContent sadece içerik okumak için eklenebilir
     ]
 });
 
@@ -53,9 +53,7 @@ client.on('guildMemberAdd', async member => {
         const channel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
         if (channel) {
             const msg = await channel.send(`Hoş geldin <@${member.id}>!`);
-            setTimeout(() => {
-                msg.delete().catch(console.error);
-            }, 3000); // 3 saniye sonra sil
+            setTimeout(() => msg.delete().catch(console.error), 3000);
         }
     } catch (err) {
         console.error(err);
