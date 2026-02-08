@@ -4,12 +4,12 @@ const { joinVoiceChannel, VoiceConnectionStatus, entersState } = require('@disco
 const sodium = require('libsodium-wrappers');
 const express = require('express');
 
-// --- UPTIME SERVİSİ ---
+// --- 1. UPTIME SERVİSİ ---
 const app = express();
-app.get('/', (req, res) => res.send('Ses Sistemi Fixlendi!'));
+app.get('/', (req, res) => res.send('Ses Sistemi Fixlendi! 🚀'));
 app.listen(process.env.PORT || 3000);
 
-// --- BOT YAPILANDIRMASI ---
+// --- 2. BOT YAPILANDIRMASI ---
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -19,7 +19,7 @@ const client = new Client({
     ]
 });
 
-const config = {
+const cfg = {
     token: process.env.TOKEN?.trim(),
     guildId: process.env.GUILD_ID,
     voiceId: process.env.VOICE_CHANNEL_ID,
@@ -27,23 +27,23 @@ const config = {
     welcomeId: process.env.WELCOME_CHANNEL_ID
 };
 
-// --- AKTİVİTE GÜNCELLEME ---
+// --- 3. AKTİVİTE GÜNCELLEME ---
 async function updateActivity() {
     try {
-        const guild = await client.guilds.fetch(config.guildId);
+        const guild = await client.guilds.fetch(cfg.guildId);
         const online = guild.members.cache.filter(m => m.presence?.status && m.presence.status !== 'offline').size;
         client.user.setActivity(`Aktif: ${online} | Üye: ${guild.memberCount}`, { type: ActivityType.Watching });
-    } catch (e) { console.log("Aktivite hatası"); }
+    } catch (e) { console.log("Aktivite güncellenemedi."); }
 }
 
-// --- SES BAĞLANTISI (RECONNECT DESTEKLİ) ---
+// --- 4. SES BAĞLANTISI (KESİN ÇÖZÜM DÖNGÜSÜ) ---
 async function stayInVoice() {
     try {
-        const guild = client.guilds.cache.get(config.guildId);
-        const voiceChannel = guild.channels.cache.get(config.voiceId);
+        const guild = await client.guilds.fetch(cfg.guildId);
+        const channel = await guild.channels.fetch(cfg.voiceId);
 
         const connection = joinVoiceChannel({
-            channelId: voiceChannel.id,
+            channelId: channel.id,
             guildId: guild.id,
             adapterCreator: guild.voiceAdapterCreator,
             selfDeaf: true,
@@ -57,46 +57,49 @@ async function stayInVoice() {
                     entersState(connection, VoiceConnectionStatus.Connecting, 5000),
                 ]);
             } catch (e) {
-                console.log("Bağlantı koptu, 5 saniye sonra tekrar giriliyor...");
+                console.log("🔄 Bağlantı koptu, 5 saniye içinde geri dönülüyor...");
                 setTimeout(stayInVoice, 5000);
             }
         });
+
+        // Hata yakalayıcı (Encryption hatasını burada hapseder)
+        connection.on('error', (error) => {
+            console.error("⚠️ Ses Motoru Hatası:", error.message);
+            if (error.message.includes('encryption')) {
+                console.log("🛠️ Şifreleme hatası saptandı, motor yeniden başlatılıyor...");
+                connection.destroy();
+                setTimeout(stayInVoice, 10000);
+            }
+        });
+
     } catch (err) {
-        console.log("Ses kanalı hatası, 10 saniye sonra tekrar denenecek...");
+        console.log("❌ Kanala bağlanılamadı, 10 saniye sonra tekrar denenecek.");
         setTimeout(stayInVoice, 10000);
     }
 }
 
-// --- HAZIR OLDUĞUNDA ---
+// --- 5. EVENTLER ---
 client.once(Events.ClientReady, () => {
-    console.log(`[+] ${client.user.tag} aktif.`);
+    console.log(`✅ [GİRİŞ] ${client.user.tag} aktif.`);
     stayInVoice();
     updateActivity();
     setInterval(updateActivity, 60000);
 });
 
-// --- KARŞILAMA VE OTOROL ---
 client.on(Events.GuildMemberAdd, async (member) => {
     try {
-        if (config.roleId) {
-            const role = member.guild.roles.cache.get(config.roleId);
-            if (role) await member.roles.add(role);
-        }
-        const channel = member.guild.channels.cache.get(config.welcomeId);
-        if (channel) channel.send(`Sunucumuza hoş geldin 👋
+        if (cfg.roleId) await member.roles.add(cfg.roleId);
+        const welcome = member.guild.channels.cache.get(cfg.welcomeId);
+        if (welcome) welcome.send(`Sunucumuza hoş geldin 👋
 Başvuru ve bilgilendirme kanallarını incelemeyi unutma.
 
 San Andreas State Police #𝐃𝐄𝐒𝐓𝐀𝐍 <@${member.id}>!`);
         updateActivity();
-    } catch (e) { console.log("Üye giriş hatası"); }
+    } catch (e) { console.log("Üye giriş işlemi aksadı."); }
 });
 
-// --- ÇALIŞTIR ---
+// --- 6. ÇALIŞTIR ---
 (async () => {
-    try {
-        await sodium.ready; // Şifrelemeyi bekle
-        await client.login(config.token);
-    } catch (err) {
-        console.error("Başlatma hatası:", err);
-    }
+    await sodium.ready; // Libsodium'un hazır olmasını bekle
+    client.login(cfg.token);
 })();
