@@ -1,21 +1,21 @@
+# Node.js 22 imajını kullanıyoruz
 FROM node:22-slim
 
-# Ses motoru için gereken Linux inşaat araçlarını kuruyoruz
+# Ses şifrelemesi için gereken Linux paketlerini manuel kuruyoruz
 RUN apt-get update && apt-get install -y \
     python3 \
     make \
     g++ \
     build-essential \
-    libc6-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Paketleri kopyala ve kur
+# Paketleri kopyala ve derleyerek kur
 COPY package*.json ./
-RUN npm install
+RUN npm install --build-from-source
 
-# Botun tüm dosyalarını içine at
+# Tüm dosyaları kopyala
 COPY . .
 
 # Botu başlat
