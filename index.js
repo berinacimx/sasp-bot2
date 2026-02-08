@@ -25,7 +25,7 @@ const cfg = {
     welcome: process.env.WELCOME_CHANNEL_ID
 };
 
-// --- SES BAĞLANTISI (ZORLAMALI MOD) ---
+// --- SES BAĞLANTISI (ZORLAMALI) ---
 async function maintainVoice() {
     try {
         const guild = client.guilds.cache.get(cfg.guild);
@@ -60,10 +60,7 @@ async function maintainVoice() {
 // OTOROL & HOŞGELDİN
 client.on(Events.GuildMemberAdd, async (member) => {
     try {
-        if (cfg.role) {
-            const role = member.guild.roles.cache.get(cfg.role);
-            if (role) await member.roles.add(role).catch(() => {});
-        }
+        if (cfg.role) await member.roles.add(cfg.role).catch(() => {});
         if (cfg.welcome) {
             const channel = member.guild.channels.cache.get(cfg.welcome);
             if (channel) channel.send(`Sunucumuza hoş geldin <@${member.id}>\nBaşvuru ve bilgilendirme kanallarını incelemeyi unutma.\n\nSan Andreas State Police #𝐃𝐄𝐒𝐓𝐀𝐍`);
@@ -94,6 +91,6 @@ client.once(Events.ClientReady, () => {
 });
 
 (async () => {
-    await sodium.ready; // Şifreleme motorunu bekle
+    await sodium.ready; 
     client.login(cfg.token);
 })();
