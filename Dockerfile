@@ -1,6 +1,5 @@
 FROM node:20-bullseye
 
-# SES İÇİN ZORUNLU PAKETLER
 RUN apt-get update && apt-get install -y \
   ffmpeg \
   libopus-dev \
