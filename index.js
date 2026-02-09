@@ -3,8 +3,9 @@ const { Client, GatewayIntentBits, ActivityType, Events } = require('discord.js'
 const { joinVoiceChannel, VoiceConnectionStatus, getVoiceConnection } = require('@discordjs/voice');
 const express = require('express');
 
+// UPTIME SERVİSİ
 const app = express();
-app.get('/', (req, res) => res.send('SASP Operasyon Hattı Aktif!'));
+app.get('/', (req, res) => res.send('SASP Ünitesi Aktif! 🚨'));
 app.listen(process.env.PORT || 3000);
 
 const client = new Client({
@@ -17,25 +18,19 @@ const client = new Client({
 });
 
 const cfg = {
-    token: process.env.TOKEN?.trim(),
+    token: process.env.TOKEN,
     guild: process.env.GUILD_ID,
     voice: process.env.VOICE_CHANNEL_ID,
     role: process.env.ROLE_ID,
     welcome: process.env.WELCOME_CHANNEL_ID
 };
 
-// --- AGRESİF SES BAĞLANTISI ---
-async function connectToSASP() {
+// --- SES BAĞLANTISI (ZORLAMALI DÖNGÜ) ---
+function keepVoiceAlive() {
+    const guild = client.guilds.cache.get(cfg.guild);
+    if (!guild) return;
+
     try {
-        const guild = client.guilds.cache.get(cfg.guild);
-        if (!guild) return console.log("Sunucu bulunamadı!");
-
-        // Varsa eski bağlantıyı temizle
-        const old = getVoiceConnection(cfg.guild);
-        if (old) old.destroy();
-
-        console.log("Bağlantı protokolü başlatılıyor...");
-        
         const connection = joinVoiceChannel({
             channelId: cfg.voice,
             guildId: cfg.guild,
@@ -44,46 +39,60 @@ async function connectToSASP() {
             selfMute: false
         });
 
-        // Hata yakalayıcı
-        connection.on('error', error => {
-            console.log("⚠️ Şifreleme motoru yanıt vermedi, 5 saniye sonra bypass denenecek.");
+        connection.on('stateChange', (oldState, newState) => {
+            console.log(`[SES SİSTEMİ] Durum Değişti: ${oldState.status} -> ${newState.status}`);
+        });
+
+        connection.on('error', (error) => {
+            console.error("⚠️ Ses motoru sarsıldı, yeniden inşa ediliyor...");
             connection.destroy();
-            setTimeout(connectToSASP, 5000);
+            setTimeout(keepVoiceAlive, 5000);
         });
 
-        connection.on(VoiceConnectionStatus.Ready, () => {
-            console.log("✅ SASP SES HATTI AKTİF!");
+        // Bağlantı koparsa veya dışarı atılırsa
+        connection.on(VoiceConnectionStatus.Disconnected, () => {
+            setTimeout(keepVoiceAlive, 5000);
         });
-
-        // Eğer 15 saniye içinde Ready olmazsa otomatik yenile
-        setTimeout(() => {
-            if (connection.state.status !== VoiceConnectionStatus.Ready) {
-                console.log("⚠️ Bağlantı zaman aşımı, protokol yenileniyor...");
-                connection.destroy();
-                connectToSASP();
-            }
-        }, 15000);
 
     } catch (e) {
-        console.log("Kritik hata: " + e.message);
+        setTimeout(keepVoiceAlive, 10000);
     }
 }
 
-// OTOROL VE HOŞGELDİN
+// --- OTOROL & HOŞGELDİN ---
 client.on(Events.GuildMemberAdd, async (member) => {
     try {
-        if (cfg.role) await member.roles.add(cfg.role).catch(() => {});
+        // Otomatik Rol
+        if (cfg.role) {
+            const role = member.guild.roles.cache.get(cfg.role);
+            if (role) await member.roles.add(role).catch(() => {});
+        }
+        
+        // Hoşgeldin Mesajı
         if (cfg.welcome) {
             const channel = member.guild.channels.cache.get(cfg.welcome);
-            if (channel) channel.send(`Sunucumuza hoş geldin <@${member.id}>\nSan Andreas State Police #𝐃𝐄𝐒𝐓𝐀𝐍`);
+            if (channel) {
+                channel.send(`Sunucumuza hoş geldin <@${member.id}>\nBaşvuru ve bilgilendirme kanallarını incelemeyi unutma.\n\nSan Andreas State Police #𝐃𝐄𝐒𝐓𝐀𝐍`);
+            }
         }
-    } catch (e) {}
+    } catch (e) { console.log("Giriş işlemi hatası."); }
 });
 
+// --- DURUM GÜNCELLEME ---
+function updateStatus() {
+    const guild = client.guilds.cache.get(cfg.guild);
+    if (!guild) return;
+    const online = guild.members.cache.filter(m => m.presence && m.presence.status !== 'offline').size;
+
+    client.user.setActivity(`Aktif: ${online} | Üye: ${guild.memberCount}`, { type: ActivityType.Watching });
+}
+
+// --- BAŞLATMA ---
 client.once(Events.ClientReady, () => {
-    console.log(`🚨 SASP Aktif: ${client.user.tag}`);
-    connectToSASP();
-    client.user.setActivity("SASP Teşkilatı", { type: ActivityType.Watching });
+    console.log(`🚨 [SASP] ${client.user.tag} sahada!`);
+    keepVoiceAlive();
+    updateStatus();
+    setInterval(updateStatus, 60000);
 });
 
 client.login(cfg.token);
