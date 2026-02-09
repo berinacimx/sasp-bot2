@@ -95,6 +95,11 @@ client.on("guildMemberAdd", async member => {
 
   updateActivity();
 });
+(async () => {
+  await sodium.ready;
+  console.log("✅ libsodium hazır");
+})();
 
 client.login(TOKEN);
+
 
