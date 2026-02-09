@@ -1,11 +1,11 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, ActivityType, Events } = require('discord.js');
-const { joinVoiceChannel, VoiceConnectionStatus, getVoiceConnection } = require('@discordjs/voice');
-const sodium = require('libsodium-wrappers');
+const { joinVoiceChannel, VoiceConnectionStatus, getVoiceConnection, entersState } = require('@discordjs/voice');
 const express = require('express');
 
+// Uptime için Express
 const app = express();
-app.get('/', (req, res) => res.send('SASP Sistemi Aktif!'));
+app.get('/', (req, res) => res.send('SASP Operasyon Merkezi Aktif! 🚨'));
 app.listen(process.env.PORT || 3000);
 
 const client = new Client({
@@ -25,72 +25,78 @@ const cfg = {
     welcome: process.env.WELCOME_CHANNEL_ID
 };
 
-// --- SES BAĞLANTISI (ZORLAMALI) ---
-async function maintainVoice() {
+// --- GÜÇLENDİRİLMİŞ SES BAĞLANTISI ---
+async function connectToVoice() {
+    const guild = client.guilds.cache.get(cfg.guild);
+    if (!guild) return console.log("Sunucu bulunamadı!");
+
+    // Eski bağlantı varsa temizle
+    let connection = getVoiceConnection(cfg.guild);
+    if (connection) connection.destroy();
+
+    connection = joinVoiceChannel({
+        channelId: cfg.voice,
+        guildId: cfg.guild,
+        adapterCreator: guild.voiceAdapterCreator,
+        selfDeaf: true,
+        selfMute: false,
+    });
+
     try {
-        const guild = client.guilds.cache.get(cfg.guild);
-        if (!guild) return;
-
-        const oldConn = getVoiceConnection(cfg.guild);
-        if (oldConn) oldConn.destroy();
-
-        const connection = joinVoiceChannel({
-            channelId: cfg.voice,
-            guildId: cfg.guild,
-            adapterCreator: guild.voiceAdapterCreator,
-            selfDeaf: true,
-            selfMute: false
-        });
-
-        connection.on(VoiceConnectionStatus.Ready, () => {
-            console.log(`✅ [BAŞARILI] Ses kanalına kilitlendi!`);
-        });
-
-        connection.on('error', (err) => {
-            console.error("⚠️ [SİSTEM] Şifreleme hatası yakalandı, tazeleniyor...");
-            if (connection) connection.destroy();
-            setTimeout(maintainVoice, 15000);
-        });
-
-    } catch (e) {
-        setTimeout(maintainVoice, 20000);
+        // 20 saniye içinde 'Ready' olmazsa hata fırlat
+        await entersState(connection, VoiceConnectionStatus.Ready, 20_000);
+        console.log(`✅ [SES] ${cfg.voice} kanalına başarıyla girildi.`);
+    } catch (error) {
+        console.error("❌ [HATA] Ses motoru el sıkışamadı, yeniden deneniyor...");
+        connection.destroy();
+        // Hata durumunda 10 saniye bekle ve tekrar dene
+        setTimeout(connectToVoice, 10000);
     }
+
+    connection.on(VoiceConnectionStatus.Disconnected, async () => {
+        try {
+            await Promise.race([
+                entersState(connection, VoiceConnectionStatus.Signalling, 5000),
+                entersState(connection, VoiceConnectionStatus.Connecting, 5000),
+            ]);
+        } catch (e) {
+            console.log("Bağlantı koptu, tekrar bağlanılıyor...");
+            connectToVoice();
+        }
+    });
 }
 
 // OTOROL & HOŞGELDİN
 client.on(Events.GuildMemberAdd, async (member) => {
     try {
-        if (cfg.role) await member.roles.add(cfg.role).catch(() => {});
+        if (cfg.role) await member.roles.add(cfg.role).catch(e => console.log("Rol verilemedi."));
         if (cfg.welcome) {
             const channel = member.guild.channels.cache.get(cfg.welcome);
-            if (channel) channel.send(`Sunucumuza hoş geldin <@${member.id}>\nBaşvuru ve bilgilendirme kanallarını incelemeyi unutma.\n\nSan Andreas State Police #Destan`);
+            if (channel) channel.send(`Sunucumuza hoş geldin <@${member.id}>\nBaşvuru ve bilgilendirme kanallarını incelemeyi unutma.\n\nSan Andreas State Police #𝐃𝐄𝐒𝐓𝐀𝐍`);
         }
-    } catch (e) {}
+    } catch (e) { console.log("Giriş işlemi hatası."); }
 });
 
 // AKTİVİTE DÖNGÜSÜ
-let cycle = 0;
-function refreshStatus() {
+let statusIndex = 0;
+function updateStatus() {
     const guild = client.guilds.cache.get(cfg.guild);
     if (!guild) return;
     const online = guild.members.cache.filter(m => m.presence && m.presence.status !== 'offline').size;
 
-    if (cycle === 0) {
-        client.user.setActivity("San Andreas State Police", { type: ActivityType.Playing });
-        cycle = 1;
-    } else {
-        client.user.setActivity(`Aktif: ${online} | Üye: ${guild.memberCount}`, { type: ActivityType.Watching });
-        cycle = 0;
-    }
+    const statuses = [
+        { name: "San Andreas State Police", type: ActivityType.Playing },
+        { name: `Aktif: ${online} | Üye: ${guild.memberCount}`, type: ActivityType.Watching }
+    ];
+
+    client.user.setActivity(statuses[statusIndex]);
+    statusIndex = (statusIndex + 1) % statuses.length;
 }
 
 client.once(Events.ClientReady, () => {
-    console.log(`[BOT] ${client.user.tag} giriş yaptı.`);
-    maintainVoice();
-    setInterval(refreshStatus, 20000);
+    console.log(`🚨 [SASP] ${client.user.tag} aktif!`);
+    connectToVoice();
+    setInterval(updateStatus, 30000);
 });
 
-(async () => {
-    await sodium.ready; 
-    client.login(cfg.token);
-})();
+client.login(cfg.token);
