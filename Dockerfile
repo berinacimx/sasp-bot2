@@ -1,22 +1,24 @@
-# Node.js 22 imajını kullanıyoruz
-FROM node:22-slim
+FROM node:20-bullseye
 
-# Ses şifrelemesi için gereken Linux paketlerini manuel kuruyoruz
+# Sistem bağımlılıkları (SES İÇİN ZORUNLU)
 RUN apt-get update && apt-get install -y \
-    python3 \
-    make \
-    g++ \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+  ffmpeg \
+  python3 \
+  make \
+  g++ \
+  libcairo2-dev \
+  libpango1.0-dev \
+  libjpeg-dev \
+  libgif-dev \
+  librsvg2-dev \
+  libsodium-dev \
+  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Paketleri kopyala ve derleyerek kur
 COPY package*.json ./
-RUN npm install --build-from-source
+RUN npm install --omit=dev
 
-# Tüm dosyaları kopyala
 COPY . .
 
-# Botu başlat
 CMD ["node", "index.js"]
