@@ -4,15 +4,13 @@ const {
   GatewayIntentBits,
   Partials,
   Events,
-  AuditLogEvent,
-  ActivityType,
-  EmbedBuilder
+  ActivityType
 } = require("discord.js");
 const express = require("express");
 
-/* ==================== EXPRESS / UPTIME ==================== */
+/* ==================== UPTIME ==================== */
 const app = express();
-app.get("/", (_, res) => res.send("Bot aktif"));
+app.get("/", (req, res) => res.send("Bot Aktif"));
 app.listen(process.env.PORT || 3000);
 
 /* ==================== CLIENT ==================== */
@@ -20,50 +18,15 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildPresences,
-    GatewayIntentBits.GuildModeration
+    GatewayIntentBits.GuildPresences
   ],
   partials: [Partials.GuildMember]
 });
 
-/* ==================== YARDIMCI FONKSİYONLAR ==================== */
-const isSafe = (member) => {
-  if (!member) return true;
-  if (member.id === member.guild.ownerId) return true;
-
-  if (process.env.WHITELIST_USERS) {
-    if (process.env.WHITELIST_USERS.split(",").includes(member.id)) return true;
-  }
-
-  if (process.env.WHITELIST_ROLES) {
-    return member.roles.cache.some(r =>
-      process.env.WHITELIST_ROLES.split(",").includes(r.id)
-    );
-  }
-
-  return false;
-};
-
-const punish = async (member) => {
-  if (!member.manageable) return;
-  await member.roles.set([]);
-};
-
-const sendLog = async (guild, text) => {
-  const ch = guild.channels.cache.get(process.env.LOG_CHANNEL_ID);
-  if (!ch) return;
-
-  const embed = new EmbedBuilder()
-    .setColor("Red")
-    .setDescription(text)
-    .setTimestamp();
-
-  ch.send({ embeds: [embed] });
-};
-
-/* ==================== READY + PRESENCE ==================== */
+/* ==================== READY + YAYIN ==================== */
 client.once(Events.ClientReady, async () => {
-  console.log(`🤖 Aktif: ${client.user.tag}`);
+  console.log(`🤖 Bot aktif: ${client.user.tag}`);
+
   let toggle = false;
 
   setInterval(async () => {
@@ -77,18 +40,22 @@ client.once(Events.ClientReady, async () => {
 
       if (toggle) {
         client.user.setActivity("San Andreas State Police", {
-          type: ActivityType.Playing
+          type: ActivityType.Streaming,
+          url: "https://www.twitch.tv/rispectofficial"
         });
       } else {
         client.user.setActivity(
-          `Çevrimiçi : ${online}  Üye : ${guild.memberCount}`,
-          { type: ActivityType.Watching }
+          `Çevrimiçi : ${online}  |  Üye : ${guild.memberCount}`,
+          {
+            type: ActivityType.Streaming,
+            url: "https://www.twitch.tv/rispectofficial"
+          }
         );
       }
 
       toggle = !toggle;
     } catch (err) {
-      console.error("❌ Presence hatası:", err.message);
+      console.error("Presence hatası:", err.message);
     }
   }, 30_000);
 });
@@ -100,7 +67,7 @@ client.on(Events.GuildMemberAdd, async (member) => {
     const role = member.guild.roles.cache.get(process.env.AUTOROLE_ID);
     if (role) await member.roles.add(role);
 
-    // Hoş geldin
+    // Hoş geldin mesajı
     const channel = member.guild.channels.cache.get(
       process.env.WELCOME_CHANNEL_ID
     );
@@ -116,59 +83,9 @@ Başvuru ve bilgilendirme kanallarını incelemeyi unutma.
       );
     }
   } catch (err) {
-    console.error("❌ Otorol / Hoş geldin hatası:", err);
+    console.error("Hoş geldin hatası:", err.message);
   }
 });
-
-/* ==================== KORUMA SİSTEMİ ==================== */
-const guard = async (guild, type, text) => {
-  const logs = await guild.fetchAuditLogs({ type, limit: 1 });
-  const entry = logs.entries.first();
-  if (!entry) return;
-
-  const member = await guild.members.fetch(entry.executor.id);
-  if (isSafe(member)) return;
-
-  await punish(member);
-  sendLog(guild, `${text}\nYetkili: ${member}`);
-};
-
-// Kanal
-client.on(Events.ChannelDelete, ch =>
-  guard(ch.guild, AuditLogEvent.ChannelDelete, "🧱 **Kanal silindi**")
-);
-client.on(Events.ChannelCreate, ch =>
-  guard(ch.guild, AuditLogEvent.ChannelCreate, "🧱 **Kanal oluşturuldu**")
-);
-
-// Rol
-client.on(Events.GuildRoleDelete, role =>
-  guard(role.guild, AuditLogEvent.RoleDelete, "🧱 **Rol silindi**")
-);
-client.on(Events.GuildRoleCreate, role =>
-  guard(role.guild, AuditLogEvent.RoleCreate, "🧱 **Rol oluşturuldu**")
-);
-client.on(Events.GuildRoleUpdate, (_, role) =>
-  guard(role.guild, AuditLogEvent.RoleUpdate, "🧱 **Rol güncellendi**")
-);
-
-// Bot ekleme
-client.on(Events.GuildMemberAdd, member => {
-  if (!member.user.bot) return;
-  guard(
-    member.guild,
-    AuditLogEvent.BotAdd,
-    "🤖 **Yetkisiz bot eklendi**"
-  );
-});
-
-/* ==================== ERROR GUARD ==================== */
-process.on("unhandledRejection", err =>
-  console.error("UnhandledRejection:", err)
-);
-process.on("uncaughtException", err =>
-  console.error("UncaughtException:", err)
-);
 
 /* ==================== LOGIN ==================== */
 client.login(process.env.TOKEN);
