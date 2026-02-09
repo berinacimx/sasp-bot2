@@ -1,42 +1,98 @@
-require('dotenv').config();
-const { Client, GatewayIntentBits, ActivityType, Events } = require('discord.js');
-const express = require('express');
+require("dotenv").config();
+const { Client, GatewayIntentBits, ActivityType } = require("discord.js");
+const { joinVoiceChannel, VoiceConnectionStatus } = require("@discordjs/voice");
+const express = require("express");
 
+// --------------------
+// Uptime Server
+// --------------------
 const app = express();
-app.get('/', (req, res) => res.send('SASP Otorol & Hoşgeldin Aktif! 🚨'));
+app.get("/", (_, res) => res.send("Bot aktif"));
 app.listen(process.env.PORT || 3000);
 
+// --------------------
+// Discord Client
+// --------------------
 const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildPresences
-    ]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildVoiceStates
+  ]
 });
 
-const cfg = {
-    token: process.env.TOKEN?.trim(),
-    guild: process.env.GUILD_ID,
-    role: process.env.ROLE_ID,
-    welcome: process.env.WELCOME_CHANNEL_ID
-};
+const {
+  TOKEN,
+  GUILD_ID,
+  VOICE_CHANNEL_ID,
+  ROLE_ID,
+  WELCOME_CHANNEL_ID
+} = process.env;
 
-client.on(Events.GuildMemberAdd, async (member) => {
-    try {
-        if (cfg.role) {
-            const role = member.guild.roles.cache.get(cfg.role);
-            if (role) await member.roles.add(role);
-        }
-        if (cfg.welcome) {
-            const channel = member.guild.channels.cache.get(cfg.welcome);
-            if (channel) channel.send(`Sunucumuza hoş geldin <@${member.id}>\nSan Andreas State Police #𝐃𝐄𝐒𝐓𝐀𝐍`);
-        }
-    } catch (e) { console.log("Otorol hatası."); }
+let connection;
+
+// --------------------
+// Voice Connect (STABLE)
+// --------------------
+async function connectVoice() {
+  const guild = await client.guilds.fetch(GUILD_ID);
+  const channel = await guild.channels.fetch(VOICE_CHANNEL_ID);
+
+  connection = joinVoiceChannel({
+    channelId: channel.id,
+    guildId: guild.id,
+    adapterCreator: guild.voiceAdapterCreator,
+    selfDeaf: true
+  });
+
+  connection.on(VoiceConnectionStatus.Disconnected, () => {
+    console.log("Ses bağlantısı koptu, yeniden bağlanılıyor...");
+    setTimeout(connectVoice, 5000);
+  });
+}
+
+// --------------------
+// Ready
+// --------------------
+client.once("ready", async () => {
+  console.log(`✅ ${client.user.tag} aktif`);
+
+  client.user.setActivity(
+    "San Andreas State Police",
+    { type: ActivityType.Playing }
+  );
+
+  await connectVoice();
+
+  setTimeout(updateActivity, 15000);
+  setInterval(updateActivity, 60000);
 });
 
-client.once(Events.ClientReady, () => {
-    console.log(`🚨 SASP Aktif: ${client.user.tag}`);
-    client.user.setActivity("SASP Teşkilatı", { type: ActivityType.Watching });
+// --------------------
+// Activity Update
+// --------------------
+async function updateActivity() {
+  const guild = await client.guilds.fetch(GUILD_ID);
+  const online = guild.members.cache.filter(m => m.presence?.status === "online").size;
+  const total = guild.memberCount;
+
+  client.user.setActivity(
+    `Çevrim içi: ${online} | Üye: ${total}`,
+    { type: ActivityType.Watching }
+  );
+}
+
+// --------------------
+// Otorol + Welcome
+// --------------------
+client.on("guildMemberAdd", async member => {
+  const role = member.guild.roles.cache.get(ROLE_ID);
+  if (role) await member.roles.add(role);
+
+  const ch = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
+  if (ch) ch.send(`Hoş geldin <@${member.id}> 👋`);
+
+  updateActivity();
 });
 
-client.login(cfg.token);
+client.login(TOKEN);
