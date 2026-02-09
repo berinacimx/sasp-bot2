@@ -1,3 +1,4 @@
+const sodium = require("libsodium-wrappers");
 require("dotenv").config();
 const { Client, GatewayIntentBits, ActivityType } = require("discord.js");
 const { joinVoiceChannel, VoiceConnectionStatus } = require("@discordjs/voice");
@@ -96,3 +97,4 @@ client.on("guildMemberAdd", async member => {
 });
 
 client.login(TOKEN);
+
