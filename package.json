@@ -1,6 +1,6 @@
 {
-  "name": "sasp-final-force",
-  "version": "1.1.0",
+  "name": "sasp-destan-altyapi",
+  "version": "1.0.0",
   "main": "index.js",
   "dependencies": {
     "discord.js": "^14.16.3",
@@ -8,5 +8,8 @@
     "tweetnacl": "^1.0.3",
     "express": "^4.21.0",
     "dotenv": "^16.4.5"
+  },
+  "scripts": {
+    "start": "node index.js"
   }
 }
