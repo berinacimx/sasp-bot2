@@ -10,7 +10,7 @@ const {
 } = require("discord.js");
 const express = require("express");
 
-/* ==================== EXPRESS (UPTIME) ==================== */
+/* ==================== EXPRESS / UPTIME ==================== */
 const app = express();
 app.get("/", (_, res) => res.send("Bot aktif"));
 app.listen(process.env.PORT || 3000);
@@ -26,23 +26,26 @@ const client = new Client({
   partials: [Partials.GuildMember]
 });
 
-/* ==================== YARDIMCI ==================== */
+/* ==================== YARDIMCI FONKSİYONLAR ==================== */
 const isSafe = (member) => {
   if (!member) return true;
   if (member.id === member.guild.ownerId) return true;
 
-  if (process.env.WHITELIST_USERS?.split(",").includes(member.id)) return true;
+  if (process.env.WHITELIST_USERS) {
+    if (process.env.WHITELIST_USERS.split(",").includes(member.id)) return true;
+  }
 
   if (process.env.WHITELIST_ROLES) {
     return member.roles.cache.some(r =>
       process.env.WHITELIST_ROLES.split(",").includes(r.id)
     );
   }
+
   return false;
 };
 
 const punish = async (member) => {
-  if (!member?.manageable) return;
+  if (!member.manageable) return;
   await member.roles.set([]);
 };
 
@@ -82,31 +85,43 @@ client.once(Events.ClientReady, async () => {
           { type: ActivityType.Watching }
         );
       }
+
       toggle = !toggle;
-    } catch {}
+    } catch (err) {
+      console.error("❌ Presence hatası:", err.message);
+    }
   }, 30_000);
 });
 
 /* ==================== OTOROL + HOŞ GELDİN ==================== */
 client.on(Events.GuildMemberAdd, async (member) => {
   try {
+    // Otorol
     const role = member.guild.roles.cache.get(process.env.AUTOROLE_ID);
     if (role) await member.roles.add(role);
 
-    const ch = member.guild.channels.cache.get(process.env.WELCOME_CHANNEL_ID);
-    if (ch?.isTextBased()) {
-      ch.send(
-`Sunucumuza hoş geldin 👋
+    // Hoş geldin
+    const channel = member.guild.channels.cache.get(
+      process.env.WELCOME_CHANNEL_ID
+    );
+
+    if (channel && channel.isTextBased()) {
+      channel.send(
+`👋 Hoş geldin ${member}
+
+Sunucumuza hoş geldin 👋  
 Başvuru ve bilgilendirme kanallarını incelemeyi unutma.
 
 **San Andreas State Police #𝐃𝐄𝐒𝐓𝐀𝐍**`
       );
     }
-  } catch {}
+  } catch (err) {
+    console.error("❌ Otorol / Hoş geldin hatası:", err);
+  }
 });
 
-/* ==================== KORUMA EVENTLERİ ==================== */
-const guard = async (guild, type, actionText) => {
+/* ==================== KORUMA SİSTEMİ ==================== */
+const guard = async (guild, type, text) => {
   const logs = await guild.fetchAuditLogs({ type, limit: 1 });
   const entry = logs.entries.first();
   if (!entry) return;
@@ -115,7 +130,7 @@ const guard = async (guild, type, actionText) => {
   if (isSafe(member)) return;
 
   await punish(member);
-  sendLog(guild, actionText + `\nYetkili: ${member}`);
+  sendLog(guild, `${text}\nYetkili: ${member}`);
 };
 
 // Kanal
@@ -123,7 +138,7 @@ client.on(Events.ChannelDelete, ch =>
   guard(ch.guild, AuditLogEvent.ChannelDelete, "🧱 **Kanal silindi**")
 );
 client.on(Events.ChannelCreate, ch =>
-  guard(ch.guild, AuditLogEvent.ChannelCreate, "🧱 **Kanal açıldı**")
+  guard(ch.guild, AuditLogEvent.ChannelCreate, "🧱 **Kanal oluşturuldu**")
 );
 
 // Rol
@@ -133,8 +148,8 @@ client.on(Events.GuildRoleDelete, role =>
 client.on(Events.GuildRoleCreate, role =>
   guard(role.guild, AuditLogEvent.RoleCreate, "🧱 **Rol oluşturuldu**")
 );
-client.on(Events.GuildRoleUpdate, (_, newRole) =>
-  guard(newRole.guild, AuditLogEvent.RoleUpdate, "🧱 **Rol güncellendi**")
+client.on(Events.GuildRoleUpdate, (_, role) =>
+  guard(role.guild, AuditLogEvent.RoleUpdate, "🧱 **Rol güncellendi**")
 );
 
 // Bot ekleme
@@ -148,8 +163,12 @@ client.on(Events.GuildMemberAdd, member => {
 });
 
 /* ==================== ERROR GUARD ==================== */
-process.on("unhandledRejection", () => {});
-process.on("uncaughtException", () => {});
+process.on("unhandledRejection", err =>
+  console.error("UnhandledRejection:", err)
+);
+process.on("uncaughtException", err =>
+  console.error("UncaughtException:", err)
+);
 
 /* ==================== LOGIN ==================== */
 client.login(process.env.TOKEN);
