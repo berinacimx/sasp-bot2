@@ -2,11 +2,7 @@ require("dotenv").config();
 
 const sodium = require("libsodium-wrappers-sumo");
 const { Client, GatewayIntentBits, ActivityType } = require("discord.js");
-const {
-  joinVoiceChannel,
-  VoiceConnectionStatus,
-  entersState
-} = require("@discordjs/voice");
+const { joinVoiceChannel, VoiceConnectionStatus } = require("@discordjs/voice");
 
 const client = new Client({
   intents: [
@@ -18,13 +14,13 @@ const client = new Client({
 let connection = null;
 let reconnecting = false;
 
-// 🔒 ENCRYPTION KİLİDİ
+/* 🔐 SODIUM KİLİDİ */
 (async () => {
   await sodium.ready;
-  console.log("🔐 libsodium SUMO hazır (FULL ENCRYPTION)");
+  console.log("🔐 libsodium SUMO hazır");
 })();
 
-// 🎧 SES BAĞLANTISI
+/* 🎧 SES BAĞLANTISI */
 async function connectVoice(guild) {
   if (reconnecting) return;
   reconnecting = true;
@@ -32,7 +28,7 @@ async function connectVoice(guild) {
   try {
     const channel = await guild.channels.fetch(process.env.VOICE_CHANNEL_ID);
     if (!channel || !channel.isVoiceBased()) {
-      console.log("❌ Ses kanalı bulunamadı");
+      console.log("❌ Ses kanalı bulunamadı veya voice değil");
       reconnecting = false;
       return;
     }
@@ -45,30 +41,32 @@ async function connectVoice(guild) {
       selfDeaf: false
     });
 
-    await entersState(connection, VoiceConnectionStatus.Ready, 15_000);
-    console.log("🎧 Ses kanalına bağlanıldı");
-
-    connection.on(VoiceConnectionStatus.Disconnected, async () => {
-      console.log("⚠️ Ses koptu, yeniden bağlanılıyor...");
+    connection.on(VoiceConnectionStatus.Ready, () => {
+      console.log("🎧 Ses bağlantısı hazır");
       reconnecting = false;
-      setTimeout(() => connectVoice(guild), 3000);
+    });
+
+    connection.on(VoiceConnectionStatus.Disconnected, () => {
+      console.log("⚠️ Ses koptu, tekrar bağlanılıyor...");
+      reconnecting = false;
+      setTimeout(() => connectVoice(guild), 5000);
     });
 
   } catch (err) {
     console.error("❌ Ses bağlantı hatası:", err);
     reconnecting = false;
-    setTimeout(() => connectVoice(guild), 5000);
+    setTimeout(() => connectVoice(guild), 7000);
   }
 }
 
-// 🤖 BOT HAZIR
+/* 🤖 BOT HAZIR */
 client.once("clientReady", async () => {
   console.log(`🤖 Aktif: ${client.user.tag}`);
 
   const guild = await client.guilds.fetch(process.env.GUILD_ID);
-  await connectVoice(guild);
+  connectVoice(guild);
 
-  // 🎮 PRESENCE ROTASYON
+  /* 🎮 PRESENCE ROTASYONU */
   const activities = [
     { name: "San Andreas State Police", type: ActivityType.Playing },
     { name: "Devriyeleri İzliyor", type: ActivityType.Watching }
@@ -78,7 +76,7 @@ client.once("clientReady", async () => {
   setInterval(() => {
     client.user.setActivity(activities[i % activities.length]);
     i++;
-  }, 15_000);
+  }, 15000);
 });
 
 client.login(process.env.TOKEN);
