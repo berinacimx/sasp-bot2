@@ -3,7 +3,6 @@ FROM node:20-bullseye
 ENV DEBIAN_FRONTEND=noninteractive
 ENV NODE_ENV=production
 
-# Voice + Encryption için HER ŞEY
 RUN apt-get update && apt-get install -y \
   ffmpeg \
   libopus0 \
