@@ -1,24 +1,9 @@
-FROM node:20-bullseye
-
-ENV DEBIAN_FRONTEND=noninteractive
-ENV NODE_ENV=production
-
-RUN apt-get update && apt-get install -y \
-  ffmpeg \
-  libopus0 \
-  libopus-dev \
-  libsodium23 \
-  libsodium-dev \
-  python3 \
-  make \
-  g++ \
-  ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
+FROM node:20-alpine
 
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install --build-from-source --unsafe-perm
+RUN npm install --omit=dev
 
 COPY . .
 
