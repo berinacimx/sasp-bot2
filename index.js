@@ -5,18 +5,17 @@ const {
   Partials,
   Events,
   AuditLogEvent,
-  PermissionsBitField,
   ActivityType,
   EmbedBuilder
 } = require("discord.js");
 const express = require("express");
 
-/* ================= EXPRESS ================= */
+/* ==================== EXPRESS (UPTIME) ==================== */
 const app = express();
 app.get("/", (_, res) => res.send("Bot aktif"));
 app.listen(process.env.PORT || 3000);
 
-/* ================= CLIENT ================= */
+/* ==================== CLIENT ==================== */
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -27,15 +26,22 @@ const client = new Client({
   partials: [Partials.GuildMember]
 });
 
-/* ================= UTILS ================= */
+/* ==================== YARDIMCI FONKSİYONLAR ==================== */
 const isSafe = (member) => {
   if (!member) return true;
   if (member.id === member.guild.ownerId) return true;
-  if (process.env.WHITELIST_USERS?.split(",").includes(member.id)) return true;
 
-  return member.roles.cache.some(r =>
-    process.env.WHITELIST_ROLES?.split(",").includes(r.id)
-  );
+  if (process.env.WHITELIST_USERS) {
+    if (process.env.WHITELIST_USERS.split(",").includes(member.id)) return true;
+  }
+
+  if (process.env.WHITELIST_ROLES) {
+    return member.roles.cache.some(r =>
+      process.env.WHITELIST_ROLES.split(",").includes(r.id)
+    );
+  }
+
+  return false;
 };
 
 const punish = async (member) => {
@@ -43,60 +49,78 @@ const punish = async (member) => {
   await member.roles.set([]);
 };
 
-const log = async (guild, text) => {
-  const channel = guild.channels.cache.get(process.env.LOG_CHANNEL_ID);
-  if (!channel) return;
+const sendLog = async (guild, text) => {
+  const logChannel = guild.channels.cache.get(process.env.LOG_CHANNEL_ID);
+  if (!logChannel) return;
 
   const embed = new EmbedBuilder()
     .setColor("Red")
     .setDescription(text)
     .setTimestamp();
 
-  channel.send({ embeds: [embed] });
+  logChannel.send({ embeds: [embed] });
 };
 
-/* ================= READY + PRESENCE ================= */
-client.once(Events.ClientReady, async (c) => {
-  console.log(`🤖 Aktif: ${c.user.tag}`);
+/* ==================== READY + PRESENCE ==================== */
+client.once(Events.ClientReady, async (clientUser) => {
+  console.log(`🤖 Aktif: ${clientUser.user.tag}`);
 
   let toggle = false;
+
   setInterval(async () => {
-    const guild = await c.guilds.fetch(process.env.GUILD_ID);
-    await guild.members.fetch({ withPresences: true });
+    try {
+      const guild = await clientUser.guilds.fetch(process.env.GUILD_ID);
+      await guild.members.fetch({ withPresences: true });
 
-    const online = guild.members.cache.filter(
-      m => m.presence && m.presence.status !== "offline"
-    ).size;
+      const online = guild.members.cache.filter(
+        m => m.presence && m.presence.status !== "offline"
+      ).size;
 
-    if (toggle) {
-      c.user.setActivity("San Andreas State Police", { type: ActivityType.Playing });
-    } else {
-      c.user.setActivity(
-        `Çevrimiçi : ${online}  Üye : ${guild.memberCount}`,
-        { type: ActivityType.Watching }
-      );
+      const total = guild.memberCount;
+
+      if (toggle) {
+        clientUser.user.setActivity(
+          "San Andreas State Police",
+          { type: ActivityType.Playing }
+        );
+      } else {
+        clientUser.user.setActivity(
+          `Çevrimiçi : ${online}  Üye : ${total}`,
+          { type: ActivityType.Watching }
+        );
+      }
+
+      toggle = !toggle;
+    } catch (err) {
+      console.error("❌ Presence hatası:", err.message);
     }
-    toggle = !toggle;
   }, 30_000);
 });
 
-/* ================= OTOROL + HOŞ GELDİN ================= */
+/* ==================== OTOROL + HOŞ GELDİN ==================== */
 client.on(Events.GuildMemberAdd, async (member) => {
-  const role = member.guild.roles.cache.get(process.env.AUTOROLE_ID);
-  if (role) await member.roles.add(role);
+  try {
+    const role = member.guild.roles.cache.get(process.env.AUTOROLE_ID);
+    if (role) await member.roles.add(role);
 
-  const ch = member.guild.channels.cache.get(process.env.WELCOME_CHANNEL_ID);
-  if (ch) {
-    ch.send(
+    const channel = member.guild.channels.cache.get(
+      process.env.WELCOME_CHANNEL_ID
+    );
+
+    if (channel && channel.isTextBased()) {
+      channel.send(
 `Sunucumuza hoş geldin 👋
 Başvuru ve bilgilendirme kanallarını incelemeyi unutma.
 
 **San Andreas State Police #𝐃𝐄𝐒𝐓𝐀𝐍**`
-    );
+      );
+    }
+  } catch (err) {
+    console.error("❌ Otorol / Hoş geldin hatası:", err);
   }
 });
 
-/* ================= GUARD EVENTS ================= */
+/* ==================== KORUMA SİSTEMİ ==================== */
 
 // 🧱 KANAL SİLME
 client.on(Events.ChannelDelete, async (channel) => {
@@ -111,7 +135,7 @@ client.on(Events.ChannelDelete, async (channel) => {
   if (isSafe(member)) return;
 
   await punish(member);
-  log(channel.guild, `🧱 **Kanal silme engellendi**\nYetkili: ${member}`);
+  sendLog(channel.guild, `🧱 **Kanal silme engellendi**\nYetkili: ${member}`);
 });
 
 // 🧱 ROL SİLME
@@ -127,31 +151,16 @@ client.on(Events.GuildRoleDelete, async (role) => {
   if (isSafe(member)) return;
 
   await punish(member);
-  log(role.guild, `🧱 **Rol silme engellendi**\nYetkili: ${member}`);
+  sendLog(role.guild, `🧱 **Rol silme engellendi**\nYetkili: ${member}`);
 });
 
-// 🤖 BOT EKLEME
-client.on(Events.GuildMemberAdd, async (member) => {
-  if (!member.user.bot) return;
+/* ==================== ERROR GUARD ==================== */
+process.on("unhandledRejection", err =>
+  console.error("UnhandledRejection:", err)
+);
+process.on("uncaughtException", err =>
+  console.error("UncaughtException:", err)
+);
 
-  const logs = await member.guild.fetchAuditLogs({
-    type: AuditLogEvent.BotAdd,
-    limit: 1
-  });
-  const entry = logs.entries.first();
-  if (!entry) return;
-
-  const executor = await member.guild.members.fetch(entry.executor.id);
-  if (isSafe(executor)) return;
-
-  await member.kick();
-  await punish(executor);
-  log(member.guild, `🤖 **İzinsiz bot engellendi**`);
-});
-
-/* ================= ERROR GUARD ================= */
-process.on("unhandledRejection", console.error);
-process.on("uncaughtException", console.error);
-
-/* ================= LOGIN ================= */
+/* ==================== LOGIN ==================== */
 client.login(process.env.TOKEN);
