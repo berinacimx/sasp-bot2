@@ -8,12 +8,14 @@ const {
 } = require("discord.js");
 const express = require("express");
 
-/* -------------------- EXPRESS (Railway / Uptime) -------------------- */
+/* ==================== EXPRESS (UPTIME / RAILWAY) ==================== */
 const app = express();
-app.get("/", (_, res) => res.send("Bot aktif"));
-app.listen(process.env.PORT || 3000);
+app.get("/", (req, res) => res.send("Bot aktif"));
+app.listen(process.env.PORT || 3000, () =>
+  console.log("🌐 Uptime aktif")
+);
 
-/* -------------------- CLIENT -------------------- */
+/* ==================== DISCORD CLIENT ==================== */
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -23,16 +25,12 @@ const client = new Client({
   partials: [Partials.GuildMember]
 });
 
-/* -------------------- READY -------------------- */
+/* ==================== READY + PRESENCE ==================== */
 client.once(Events.ClientReady, async (c) => {
   console.log(`🤖 Aktif: ${c.user.tag}`);
 
-  // 🎮 OYNUYOR
-  c.user.setActivity("San Andreas State Police", {
-    type: ActivityType.Playing
-  });
+  let toggle = false;
 
-  // 👀 İZLİYOR (dinamik)
   setInterval(async () => {
     try {
       const guild = await c.guilds.fetch(process.env.GUILD_ID);
@@ -44,17 +42,27 @@ client.once(Events.ClientReady, async (c) => {
 
       const total = guild.memberCount;
 
-      c.user.setActivity(
-        `Çevrimiçi : ${online}  Üye : ${total}`,
-        { type: ActivityType.Watching }
-      );
+      if (toggle) {
+        // 🎮 OYNUYOR
+        c.user.setActivity("San Andreas State Police", {
+          type: ActivityType.Playing
+        });
+      } else {
+        // 👀 İZLİYOR
+        c.user.setActivity(
+          `Çevrimiçi : ${online}  Üye : ${total}`,
+          { type: ActivityType.Watching }
+        );
+      }
+
+      toggle = !toggle;
     } catch (err) {
-      console.error("❌ Presence güncellenemedi:", err.message);
+      console.error("❌ Presence hatası:", err.message);
     }
-  }, 30_000); // 30 saniyede bir günceller
+  }, 30_000); // 30 saniye
 });
 
-/* -------------------- OTOROL + HOŞ GELDİN -------------------- */
+/* ==================== OTOROL + HOŞ GELDİN ==================== */
 client.on(Events.GuildMemberAdd, async (member) => {
   try {
     // 🛡️ OTOROL
@@ -79,13 +87,16 @@ Başvuru ve bilgilendirme kanallarını incelemeyi unutma.
   }
 });
 
-/* -------------------- ERROR GUARD -------------------- */
+/* ==================== ERROR GUARD ==================== */
 process.on("unhandledRejection", err =>
   console.error("UnhandledRejection:", err)
 );
+
 process.on("uncaughtException", err =>
   console.error("UncaughtException:", err)
 );
 
-/* -------------------- LOGIN -------------------- */
-client.login(process.env.TOKEN);
+/* ==================== LOGIN ==================== */
+client.login(process.env.TOKEN).catch(err => {
+  console.error("❌ Login başarısız:", err);
+});
